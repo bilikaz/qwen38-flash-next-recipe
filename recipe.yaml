@@ -1,0 +1,30 @@
+# The one and only config. run.sh reads THIS — there is nothing else to configure.
+# Flag mapping: `name: value` -> --name value | `name: true` -> --name | `name: false` -> omitted.
+
+server:
+  image: myllmbox/qwen38-flash-next-vllm:v1     # pinned; digest in README
+  model: myllmbox/Qwen3.8-Flash-Next-hibrid46   # HF repo — downloaded into ./models on first run (~91G)
+  port: 8000
+  models_dir: ./models
+  cache_dir: ./cache                            # compile caches; deletable, first boot rebuilds
+
+env:
+  VLLM_PLE_CPU_OFFLOAD: "1"                     # the vendor's own PLE offload switch — required
+  OMP_NUM_THREADS: "18"
+  MBX_VOCAB_GEMV: "1"                           # measured +5.5% steps
+  VLLM_MARLIN_USE_ATOMIC_ADD: "1"               # Marlin small-N fast path (self-gating)
+
+vllm:
+  served-model-name: Qwen/Qwen3.8-Flash-Next
+  distributed-executor-backend: mp              # required — PLE worker spawn
+  gpu-memory-utilization: 0.70
+  kv-cache-memory: "18000000000"                # bytes; 18G = ~580k pooled KV tokens (KV must stay bf16)
+  max-model-len: 262144                         # the model's native max
+  max-num-seqs: 8                               # aggregate scales to 8; per-request speed best at <=5
+  max-num-batched-tokens: 8192                  # also the image-input encoder budget (~2 max-res images)
+  enable-prefix-caching: true
+  enable-auto-tool-choice: true
+  tool-call-parser: qwen3_xml
+  reasoning-parser: qwen3
+  speculative-config: '{"method":"mtp","num_speculative_tokens":3}'
+  async-scheduling: true                        # +9-12% throughput at c=4-5, neutral at c=8
