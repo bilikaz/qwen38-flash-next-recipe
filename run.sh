@@ -79,7 +79,13 @@ for i in $(seq 1 240); do
   if curl -sf -m 3 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
     kill "$LOGS" 2>/dev/null; wait "$LOGS" 2>/dev/null
     echo
-    echo "✓ healthy — OpenAI API: http://127.0.0.1:$PORT/v1    stats: ./view.sh    logs: docker logs -f $NAME"
+    echo "──────────────────────────────────────────────────────────"
+    echo "✓ server booted — OpenAI-compatible API is live"
+    echo "    endpoint : http://127.0.0.1:$PORT/v1"
+    echo "    monitor  : ./view.sh          (throughput, KV, acceptance)"
+    echo "    logs     : docker logs -f $NAME"
+    echo "    stop     : ./stop.sh"
+    echo "──────────────────────────────────────────────────────────"
     exit 0
   fi
   if ! docker ps -q --filter "name=$NAME" | grep -q .; then
