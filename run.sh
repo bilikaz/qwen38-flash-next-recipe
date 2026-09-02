@@ -71,21 +71,21 @@ docker run -d --name "$NAME" --gpus all --ipc=host \
   "${ENVS[@]}" \
   --entrypoint vllm "$IMAGE" serve "/models/$LOCAL_NAME" --port 8000 "${FLAGS[@]}" >/dev/null
 
-echo "· booting (Ctrl-C is safe; the container keeps going — reattach with docker logs -f $NAME)"
-LAST=""
+echo "· streaming engine logs until healthy (Ctrl-C detaches; the container keeps booting)"
+docker logs -f "$NAME" 2>&1 &
+LOGS=$!
+trap 'kill "$LOGS" 2>/dev/null' EXIT INT TERM
 for i in $(seq 1 240); do
   if curl -sf -m 3 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+    kill "$LOGS" 2>/dev/null; wait "$LOGS" 2>/dev/null
+    echo
     echo "✓ healthy — OpenAI API: http://127.0.0.1:$PORT/v1    stats: ./view.sh    logs: docker logs -f $NAME"
     exit 0
   fi
-  # live milestone ticker: surface the engine's own progress lines as they change
-  P=$(docker logs "$NAME" 2>&1 | tr '\r' '\n' \
-      | grep -aE "Loading safetensors checkpoint shards: +[0-9]+% C|quantized table loaded|GPU KV cache size|Capturing .* CUDA graphs|Application startup" \
-      | tail -1 | sed -E 's/^\([A-Za-z]+ ?pid=[0-9]+\) *//; s/(INFO|WARNING) [0-9: .-]+\[[a-z_.:0-9]+\] //; s/\|.*\[/[/' )
-  if [ -n "$P" ] && [ "$P" != "$LAST" ]; then echo "  · $P"; LAST="$P"; fi
   if ! docker ps -q --filter "name=$NAME" | grep -q .; then
-    echo "✗ container exited — last log lines:"; docker logs --tail 5 "$NAME"; exit 1
+    kill "$LOGS" 2>/dev/null; wait "$LOGS" 2>/dev/null
+    echo "✗ container exited — see above"; exit 1
   fi
-  sleep 10
+  sleep 5
 done
-echo "✗ not healthy after 40 min — inspect: docker logs $NAME"; exit 1
+echo "✗ not healthy after 20 min — still booting? watch: docker logs -f $NAME"; exit 1
