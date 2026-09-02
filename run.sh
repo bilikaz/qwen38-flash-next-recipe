@@ -65,6 +65,7 @@ docker run -d --name "$NAME" --gpus all --ipc=host \
   ${CPUSET:+--cpuset-cpus "$CPUSET"} \
   -p "$PORT:8000" \
   -v "$MODELS_ABS:/models" -v "$CACHE_ABS:/cache" \
+  -v "$(readlink -f "$MODEL_DIR"):/models/$LOCAL_NAME" \
   -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
   -e FLASHINFER_WORKSPACE_BASE=/cache/flashinfer-workspace \
   -e VLLM_CACHE_ROOT=/cache/vllm-cache \
