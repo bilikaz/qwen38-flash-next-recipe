@@ -3,7 +3,8 @@
 **One box. 262k context. 55 tok/s single-stream, 167 tok/s aggregate at peak. Three commands.**
 
 Serves [myllmbox/Qwen3.8-Flash-Next-hibrid46](https://huggingface.co/myllmbox/Qwen3.8-Flash-Next-hibrid46)
-— a 4.6-bit mixed-precision build of Qwen's ~176B (6B active) model, engineered for a **single
+— a **4.35-bit-effective** mixed-precision build — 180.0B counted parameters in 91.11 GiB — of Qwen's
+flagship MoE (6B active), engineered for a **single
 NVIDIA DGX Spark (GB10, 119G unified memory)**. No cluster, no tensor parallelism: at 6B active
 parameters one Spark is the *correct* topology, not the compromise — a second box adds
 interconnect tax, not speed.
