@@ -46,13 +46,14 @@ Structured-output workload, thinking disabled, multi-window steady-state average
 | 4 | 103 | 26 |
 | 8 | 148–158 (peak window 167) | 19 |
 
-Full 262,144-token context; ~580k pooled KV tokens (≈2.2 concurrent max-length requests, or 8
-typical ones). Thinking-on workloads run lower (band-dependent). Numbers carry their conditions
-on purpose — rerun them yourself and count.
+Full 262,144-token context; ~610k pooled KV tokens at the 19G default (≈2.3 concurrent
+max-length requests, or 8+ typical ones — the kit runs the model alone, so it affords a bigger
+pool than the full-platform config). Thinking-on workloads run lower (band-dependent). Numbers
+carry their conditions on purpose — rerun them yourself and count.
 
 ## Tuning (recipe.yaml)
 
-- **`kv-cache-memory`** (bytes): the KV pool. 18G default. KV must stay **bf16** on this model —
+- **`kv-cache-memory`** (bytes): the KV pool. 19G default. KV must stay **bf16** on this model —
   the vendor's own QSA guard refuses fp8.
 - **`max-num-seqs`**: aggregate throughput scales to 8; per-request speed is best ≤5.
 - **`max-num-batched-tokens`**: also the image-input encoder budget — 8192 fits realistic

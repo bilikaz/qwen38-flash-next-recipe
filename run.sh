@@ -29,6 +29,7 @@ rsection() {  # all key/value lines of a section, "key<TAB>value" (quotes/commen
 IMAGE="$(rkey server image)";       PORT="$(rkey server port)"
 HF_REPO="$(rkey server model)"
 MODELS_DIR="$(rkey server models_dir)"; CACHE_DIR="$(rkey server cache_dir)"
+CPUSET="$(rkey server cpuset)"
 NAME="qwen38-flash-next"
 mkdir -p "$MODELS_DIR" "$CACHE_DIR"
 MODELS_ABS="$(cd "$MODELS_DIR" && pwd)"; CACHE_ABS="$(cd "$CACHE_DIR" && pwd)"
@@ -61,6 +62,7 @@ done < <(rsection vllm)
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 echo "· starting $NAME  ($IMAGE)  on :$PORT — first boot reaches healthy in ~15 min"
 docker run -d --name "$NAME" --gpus all --ipc=host \
+  ${CPUSET:+--cpuset-cpus "$CPUSET"} \
   -p "$PORT:8000" \
   -v "$MODELS_ABS:/models" -v "$CACHE_ABS:/cache" \
   -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
