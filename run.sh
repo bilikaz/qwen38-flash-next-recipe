@@ -42,7 +42,10 @@ if [ ! -f "$MODEL_DIR/model.safetensors.index.json" ]; then
   if command -v hf >/dev/null; then
     hf download "$HF_REPO" --local-dir "$MODEL_DIR"
   else
-    docker run --rm -v "$MODELS_ABS:/dl" --entrypoint python3 "$IMAGE" \
+    # -t gives tqdm a TTY so per-file progress bars actually render; HF_TOKEN passes
+    # through if exported (higher rate limits) and is harmless when unset.
+    TTY=""; [ -t 1 ] && TTY="-t"
+    docker run --rm $TTY -e HF_TOKEN -v "$MODELS_ABS:/dl" --entrypoint python3 "$IMAGE" \
       -c "from huggingface_hub import snapshot_download; snapshot_download('$HF_REPO', local_dir='/dl/$LOCAL_NAME')"
   fi
 fi
