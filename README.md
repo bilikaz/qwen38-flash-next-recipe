@@ -1,6 +1,6 @@
 # Qwen3.8-Flash-Next on one DGX Spark
 
-**One box. 262k context. ~150 tok/s aggregate. Three commands.**
+**One box. 262k context. 55 tok/s single-stream, 167 tok/s aggregate at peak. Three commands.**
 
 Serves [myllmbox/Qwen3.8-Flash-Next-hibrid46](https://huggingface.co/myllmbox/Qwen3.8-Flash-Next-hibrid46)
 — a 4.6-bit mixed-precision build of Qwen's ~176B (6B active) model, engineered for a **single
@@ -31,6 +31,11 @@ curl http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type: application/jso
 ```
 
 ## Measured performance (this exact kit, single Spark)
+
+Peaks (best clean 10-second windows, code-emission band): **single stream ~55 tok/s** with MTP
+acceptance touching 4.00/4.00 — the drafter running at its theoretical ceiling — and **167.5
+tok/s aggregate** at 8 concurrent streams. Sustained numbers below are what you should expect,
+peaks are what the box can touch.
 
 Structured-output workload, thinking disabled, multi-window steady-state averages:
 
