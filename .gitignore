@@ -1,0 +1,3 @@
+# runtime data the kit creates on first run — never tracked
+cache/
+models/

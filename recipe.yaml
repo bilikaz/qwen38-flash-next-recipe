@@ -20,12 +20,12 @@ vllm:
   served-model-name: Qwen/Qwen3.8-Flash-Next
   distributed-executor-backend: mp              # required — PLE worker spawn
   gpu-memory-utilization: 0.70
-  kv-cache-memory: "19000000000"                # bytes; 19G = ~610k pooled KV tokens (KV must stay bf16).
+  kv-cache-memory: "19000000000"              # PUSH: ~966k pool, ~34 seats; boot-time alloc = fail-fast; SHIP 19G
                                                 # 1G more than the full-myllmbox recipe: this kit runs the
                                                 # model ALONE — no dashboard/proxy/tunnel overhead
   max-model-len: 262144                         # the model's native max
-  max-num-seqs: 8                               # aggregate scales to 8; per-request speed best at <=5
-  max-num-batched-tokens: 8192                  # also the image-input encoder budget (~2 max-res images)
+  max-num-seqs: 12                              # upper-ladder measurement (sweet spot is <=5; c=16 = 13 tok/s each)
+  max-num-batched-tokens: 16384                 # MEASUREMENT BOOT ONLY — 4k is BELOW one max-res image (would wedge); SHIP 8192
   enable-prefix-caching: true
   enable-auto-tool-choice: true
   tool-call-parser: qwen3_xml
