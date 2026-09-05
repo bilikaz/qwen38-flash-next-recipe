@@ -1,6 +1,6 @@
 # Qwen3.8-Flash-Next on one DGX Spark
 
-**One box. 262k context. 55 tok/s single-stream, 167 tok/s aggregate at peak. Three commands.**
+**One box. 262k context. Peaks: 55 tok/s single-stream, 305 tok/s aggregate at 32 streams. Three commands.**
 
 Serves [myllmbox/Qwen3.8-Flash-Next-hibrid46](https://huggingface.co/myllmbox/Qwen3.8-Flash-Next-hibrid46)
 — a **4.35-bit-effective** mixed-precision build — 180.0B counted parameters in 91.11 GiB — of Qwen's
@@ -33,12 +33,30 @@ curl http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type: application/jso
 
 ## Measured performance (this exact kit, single Spark)
 
-Peaks (best clean 10-second windows, code-emission band): **single stream ~55 tok/s** with MTP
-acceptance touching 4.00/4.00 — the drafter running at its theoretical ceiling — and **167.5
-tok/s aggregate** at 8 concurrent streams. Sustained numbers below are what you should expect,
-peaks are what the box can touch.
+**Peak ladder** — the best clean 10-second engine window at each concurrency (all streams decoding, zero prefill in
+the window), code-emission band, thinking disabled, the myllmbox "pasture" prompt. This is the ladder behind the
+305 tok/s headline; every rung is a measured window on this checkpoint and image:
 
-Structured-output workload, thinking disabled, multi-window steady-state averages:
+| concurrent requests | peak aggregate tok/s | per-stream at peak |
+|---|---|---|
+| 1 | 55.0 | 55.0 |
+| 2 | 78.7 | 39.4 |
+| 3 | 90.2 | 30.1 |
+| 4 | 113.1 | 28.3 |
+| 5 | 116.3 | 23.3 |
+| 6 | 128.6 | 21.4 |
+| 8 | 167.5 | 20.9 |
+| 12 | 185.1 | 15.4 |
+| 16 | 228.7 | 14.3 |
+| 20 | 256.6 | 12.8 |
+| 24 | 280.0 | 11.7 |
+| 28 | 293.2 | 10.5 |
+| 32 | **305.1** | 9.5 |
+
+Single-stream peaks touch MTP acceptance 4.00/4.00 — the drafter at its theoretical ceiling for K=3.
+
+**Sustained** — multi-window steady-state averages, same workload; what you should expect minute after minute,
+peaks are what the box can touch:
 
 | concurrent requests | aggregate tok/s | per-stream |
 |---|---|---|
@@ -47,10 +65,11 @@ Structured-output workload, thinking disabled, multi-window steady-state average
 | 4 | 103 | 26 |
 | 8 | 148–158 (peak window 167) | 19 |
 
-Full 262,144-token context; ~610k pooled KV tokens at the 19G default (≈2.3 concurrent
-max-length requests, or 8+ typical ones — the kit runs the model alone, so it affords a bigger
-pool than the full-platform config). Thinking-on workloads run lower (band-dependent). Numbers
-carry their conditions on purpose — rerun them yourself and count.
+To run the upper rungs yourself, `max-num-seqs` must admit that many streams (the shipped value is 12; the ladder
+above was measured with 32 seats admitted). Full 262,144-token context; ~966k pooled KV tokens at the 19G default
+(≈3.7 concurrent max-length requests, or 30+ typical ones — the kit runs the model alone, so it affords a bigger
+pool than the full-platform config). Thinking-on workloads run lower (band-dependent; acceptance 2.3–3.0 instead of
+3.4–4.0 — the engine's steps/s do not change). Numbers carry their conditions on purpose — rerun them yourself and count.
 
 ## Tuning (recipe.yaml)
 
