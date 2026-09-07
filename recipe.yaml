@@ -2,7 +2,7 @@
 # Flag mapping: `name: value` -> --name value | `name: true` -> --name | `name: false` -> omitted.
 
 server:
-  image: myllmbox/qwen38-flash-next-vllm:v2     # pinned public tag (digest in README) = the v1 serving image + six patches:
+  image: myllmbox/qwen38-flash-next-vllm:v2     # pinned public tag (digest in README, pushed 2026-09-07) = the v1 serving image + six patches:
                                                 # the NVFP4 n-gram table demand-paged from the checkpoint files (never
                                                 # allocated, populated into memory after boot), fp8 KV on the QSA path
   cpuset: "5-9,15-19"                           # the GB10's 10 Cortex-X925 3.9GHz cores (0-4,10-14

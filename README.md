@@ -116,7 +116,7 @@ patches** on the vendor's `ple_layer.py` / QSA attention:
 Each patch refuses to apply twice and fails the build if its anchor moved. The Dockerfile, the patch scripts, the
 tests and the build ledger live in the myllmbox repo under
 [`builds/qwen38-flash-next/solo/`](https://github.com/bilikaz/myllmbox-runner/tree/main/builds/qwen38-flash-next/solo)
-— rebuild and diff it yourself. Digest: pending — filled in when the image is pushed.
+— rebuild and diff it yourself. Digest: `sha256:b2f35cd81998f4d58ef4266792282f48309e0d1bbe19f4816dc2f98684e0a3ec`.
 
 ## The full box
 
