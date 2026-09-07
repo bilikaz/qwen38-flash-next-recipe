@@ -2,33 +2,45 @@
 # Flag mapping: `name: value` -> --name value | `name: true` -> --name | `name: false` -> omitted.
 
 server:
-  image: myllmbox/qwen38-flash-next-vllm:v1     # pinned; digest in README
+  image: myllmbox/qwen38-flash-next-vllm:v2     # pinned public tag (digest in README) = the v1 serving image + six patches:
+                                                # the NVFP4 n-gram table demand-paged from the checkpoint files (never
+                                                # allocated, populated into memory after boot), fp8 KV on the QSA path
   cpuset: "5-9,15-19"                           # the GB10's 10 Cortex-X925 3.9GHz cores (0-4,10-14
                                                 # are 2.8GHz A725) — measured +2-3% at every concurrency
-  model: myllmbox/Qwen3.8-Flash-Next-hibrid46   # HF repo — downloaded into ./models on first run (~91G)
+  model: myllmbox/Qwen3.8-Flash-Next-hibrid47   # HF repo — downloaded into ./models on first run (~99G)
   port: 8000
   models_dir: ./models
-  cache_dir: ./cache                            # compile caches; deletable, first boot rebuilds
+  cache_dir: ./cache                            # compile caches + the table's flag files; deletable, first boot rebuilds
 
 env:
-  VLLM_PLE_CPU_OFFLOAD: "1"                     # the vendor's own PLE offload switch — required
+  # The n-gram (PLE) table — 26.9 GiB in NVFP4 — is never allocated. Its 8 shard files are mapped and the GPU gathers
+  # rows straight out of the mapping (GB10 unified memory). Boot holds 73 GiB of weights, so autotune has room; after
+  # warm-up the whole table is pulled into memory once and stays there (the kernel may page rows out under pressure —
+  # they come back on demand). Force a pass any time: ./ple.sh populate
+  MBX_PLE_MMAP: "1"
+  MBX_PLE_MMAP_MODE: "auto"                     # direct NVMe reads during boot, memory-mapped gather from then on
+  MBX_PLE_MMAP_PREWARM: "auto"                  # populate the whole table right after boot ("0" = fill on demand only)
   OMP_NUM_THREADS: "8"                          # matched to the 10-core pin
   MBX_VOCAB_GEMV: "1"                           # measured +5.5% steps
   VLLM_MARLIN_USE_ATOMIC_ADD: "1"               # Marlin small-N fast path (self-gating)
+  TORCH_CUDA_ARCH_LIST: "12.1a"
+  FLASHINFER_CUDA_ARCH_LIST: "12.1a"
+  MALLOC_MMAP_THRESHOLD_: "65536"               # glibc returns big freed blocks to the OS at once (the loader's
+  MALLOC_TRIM_THRESHOLD_: "131072"              # garbage otherwise stays resident — and swaps)
 
 vllm:
   served-model-name: Qwen/Qwen3.8-Flash-Next
-  distributed-executor-backend: mp              # required — PLE worker spawn
-  gpu-memory-utilization: 0.70
-  kv-cache-memory: "19000000000"              # PUSH: ~966k pool, ~34 seats; boot-time alloc = fail-fast; SHIP 19G
-                                                # 1G more than the full-myllmbox recipe: this kit runs the
-                                                # model ALONE — no dashboard/proxy/tunnel overhead
-  max-model-len: 262144                         # the model's native max
-  max-num-seqs: 12                              # upper-ladder measurement (sweet spot is <=5; c=16 = 13 tok/s each)
-  max-num-batched-tokens: 16384                 # MEASUREMENT BOOT ONLY — 4k is BELOW one max-res image (would wedge); SHIP 8192
+  distributed-executor-backend: mp              # required
+  gpu-memory-utilization: 0.70                  # with kv-cache-memory pinned this does not size the KV pool
+  kv-cache-memory: "7000000000"                 # 7G fp8 = 391,943 KV tokens (measured); the table takes the rest of the
+                                                # box — a bigger pin means fewer table rows resident, not a faster serve
+  kv-cache-dtype: fp8                           # the image's PR #54846 port; drop the line for bf16 (217,808 tokens)
+  max-model-len: 262144                         # the model's native max (1.5 max-length requests fit the pool)
+  max-num-seqs: 8                               # ~1G of pool per running request is the model's GDN state, any length
+  max-num-batched-tokens: 8192                  # also the image-input encoder budget — keep for image requests
   enable-prefix-caching: true
   enable-auto-tool-choice: true
   tool-call-parser: qwen3_xml
   reasoning-parser: qwen3
-  speculative-config: '{"method":"mtp","num_speculative_tokens":3}'
+  speculative-config: '{"method":"mtp","num_speculative_tokens":3}'   # K=3: acceptance ~3.5 on code, ~2.9 on reasoning
   async-scheduling: true                        # +9-12% throughput at c=4-5, neutral at c=8

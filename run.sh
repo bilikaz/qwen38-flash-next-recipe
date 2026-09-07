@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Qwen3.8-Flash-Next (hibrid46, 4.6-bit) on ONE DGX Spark: download if needed, serve, wait healthy.
+# Qwen3.8-Flash-Next (hibrid47: NVFP4 n-gram table demand-paged, fp8 KV) on ONE DGX Spark: download if needed, wait for
+# memory, evict stale page cache, serve, wait healthy.
 # Everything is configured in recipe.yaml. OpenAI API on :$PORT. ./stop.sh stops, ./view.sh stats.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -36,7 +37,7 @@ MODELS_ABS="$(cd "$MODELS_DIR" && pwd)"; CACHE_ABS="$(cd "$CACHE_DIR" && pwd)"
 LOCAL_NAME="$(basename "$HF_REPO")"
 MODEL_DIR="$MODELS_ABS/$LOCAL_NAME"
 
-# --- weights: ~91G, resumable (rerun on interruption) -------------------------------------------
+# --- weights: ~99G, resumable (rerun on interruption) -------------------------------------------
 if [ ! -f "$MODEL_DIR/model.safetensors.index.json" ]; then
   echo "· downloading $HF_REPO -> $MODEL_DIR"
   if command -v hf >/dev/null; then
@@ -45,8 +46,9 @@ if [ ! -f "$MODEL_DIR/model.safetensors.index.json" ]; then
     # -t gives tqdm a TTY so per-file progress bars actually render; HF_TOKEN passes
     # through if exported (higher rate limits) and is harmless when unset.
     TTY=""; [ -t 1 ] && TTY="-t"
+    # the container runs as root — hand the files back to the host user afterwards
     docker run --rm $TTY -e HF_TOKEN -v "$MODELS_ABS:/dl" --entrypoint python3 "$IMAGE" \
-      -c "from huggingface_hub import snapshot_download; snapshot_download('$HF_REPO', local_dir='/dl/$LOCAL_NAME')"
+      -c "from huggingface_hub import snapshot_download; import subprocess; snapshot_download('$HF_REPO', local_dir='/dl/$LOCAL_NAME'); subprocess.run(['chown', '-R', '$(id -u):$(id -g)', '/dl/$LOCAL_NAME'], check=False)"
   fi
 fi
 
@@ -62,8 +64,30 @@ while IFS=$'\t' read -r k v; do
   esac
 done < <(rsection vllm)
 
+# kernel page compaction — read-only check (the fix needs root → ./tune-host.sh). On a Spark the GPU's memory is
+# ordinary pages; the kernel's proactive compactor migrating them measured as 4-5 s stalls every ~37 s (~10 %).
+cp_now=$(cat /proc/sys/vm/compaction_proactiveness 2>/dev/null || echo "?")
+if [ "$cp_now" != 0 ]; then
+  echo "  ⚠ vm.compaction_proactiveness is $cp_now (want 0): expect ~10 % lower throughput and periodic 4-5 s stalls"
+  echo "    under load. One-time fix, needs sudo, shows what it runs first:  ./tune-host.sh"
+fi
 docker rm -f "$NAME" >/dev/null 2>&1 || true
-echo "· starting $NAME  ($IMAGE)  on :$PORT — first boot reaches healthy in ~15 min"
+
+# memory gate (unified memory: a serve relaunched seconds after a teardown gets a PHANTOM "CUDA out of memory" — the
+# previous container's GPU pages take 30-60 s to come back). The load needs ~100G available; the table then fills the rest.
+t=0; while :; do
+  avail=$(free -g | awk '/^Mem:/{print $7}')
+  [ "${avail:-0}" -ge 100 ] && { echo "  ✓ memory: ${avail}G available"; break; }
+  [ "$t" -ge 120 ] && { echo "  ✗ only ${avail}G available after 120 s (need ~100G) — another container on the box? (docker ps)"; exit 1; }
+  [ "$t" = 0 ] && echo "  · waiting for memory to come back (${avail}G available, need 100G)…"
+  sleep 5; t=$((t+5))
+done
+# evict our own checkpoint files from the page cache (no root: POSIX_FADV_DONTNEED via dd) — the GPU driver wants pages
+# that are FREE, and a 60-70G stale shard cache during the load has stalled it
+find "$MODEL_DIR" -type f -name "*.safetensors" -exec dd if={} iflag=nocache count=0 status=none \; 2>/dev/null || true
+echo "  · page cache: checkpoint files evicted — MemFree $(awk '/^MemFree/{printf "%d", $2/1048576}' /proc/meminfo)G"
+[ "$(free -g | awk '/^Swap:/{print $2}')" -gt 0 ] || echo "  · no swap on this box: fine — the table's rows are re-read from NVMe when the kernel needs the pages"
+echo "· starting $NAME  ($IMAGE)  on :$PORT — first boot reaches healthy in ~12 min (weights 11 min), then the table populates (~30 s)"
 docker run -d --name "$NAME" --gpus all --ipc=host \
   ${CPUSET:+--cpuset-cpus "$CPUSET"} \
   -p "$PORT:8000" \
