@@ -12,8 +12,8 @@ order it matters:
    request held 14.0–14.6 steps/s from the first window to the last, no dips, no warm-up curve, no periodic stalls. What
    varies is only how many tokens each step yields: ~2.5 on reasoning prose, ~3.5 on the written answer. v1's engine
    breathed with the CPU worker it depended on; v2 has no worker to wait for.
-2. **+15 % sustained, single stream.** 44 → **50–51 tok/s** on code across twelve runs (49.0–51.1 average, 54.6 peak). At
-   four streams 103 → **129**, at eight (every seat) 148–158 → **182**, each window inside 158–193. The peaks moved little; the *floors* moved — the average became the floor.
+2. **+15 % sustained, single stream.** 44 → **50–51 tok/s** on code (54.6 peak). At
+   four streams 103 → **129**, at eight (every seat) 148–158 → **182**. The peaks moved little; the *floors* moved — the average became the floor.
 3. **A 99 GB model on a 119 GB box, without the out-of-memory.** The naive way — load everything — dies in vLLM's autotune,
    which needs ~34 GB of transient room on top of the weights. v2 never allocates the 26.9 GiB table: the GPU reads it
    straight out of the checkpoint files through unified memory, so the boot holds 73 GB, autotune gets its room, and once
@@ -59,10 +59,10 @@ Boot 2026-09-07, myllmbox "pasture" prompt, 10-second engine windows (all stream
 
 | concurrent requests | v1 sustained | **v2 sustained** | v2 peak | engine steps/s (v1 → v2) | acceptance |
 |---|---|---|---|---|---|
-| 1 · code (thinking off) | 44 | **50–51** (12 runs, 49.0–51.1) | 54.6 | 13.8 → **14.4** (14.1–14.5, every run) | ~3.5 |
-| 1 · thinking on, full 30k-token request | — | **39–42** (4 runs, 12–14 min each) | 52–56 | **14.4** (14.0–14.6 over 12 min) | 2.9 (2.5 reasoning → 3.5–3.9 answer) |
-| 4 · code | 103 | **129** (123.2–133.2) | 133 | — → **9.3** (9.0–9.6) | 3.47 |
-| 8 · code (every seat taken) | 148–158 | **182** (158–193, 21 windows) | 193 | — → **6.6** (5.6–7.0) | 3.42 |
+| 1 · code (thinking off) | 44 | **50–51** | 54.6 | 13.8 → **14.4** | 3.5 |
+| 1 · thinking on, full 30k-token request | — | **39–42** | 52–56 | **14.4** | 2.9 (2.5 reasoning → 3.5 answer) |
+| 4 · code | 103 | **129** | 133 | — → **9.3** | 3.47 |
+| 8 · code (every seat taken) | 148–158 | **182** | 193 | — → **6.6** | 3.42 |
 
 At c=8 the KV pool reads 94 % the moment eight requests are running and 99 % soon after — the model's fixed per-request
 state, ~12 % of the 7 GB pool per seat — so 8 is the pin's seat ceiling, held for four minutes at 180–190 tok/s with
