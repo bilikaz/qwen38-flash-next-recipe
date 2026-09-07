@@ -66,7 +66,9 @@ Boot 2026-09-07, myllmbox "pasture" prompt, 10-second engine windows (all stream
 
 At c=8 the KV pool reads 94 % the moment eight requests are running and 99 % soon after — the model's fixed per-request
 state, ~12 % of the 7 GB pool per seat — so 8 is the pin's seat ceiling, held for four minutes at 180–190 tok/s with
-nothing preempted. The steps/s column is the story: one number, run after run, band after band. Generation speed is steps × accepted
+nothing preempted — and also its limit: what the state leaves (~23k tokens) is shared eight ways, ~3k tokens of prompt +
+output per request before the pool is full and the scheduler starts preempting. Long outputs want 4 seats (~50k tokens
+each) or 1–2 (the full 262k). The steps/s column is the story: one number, run after run, band after band. Generation speed is steps × accepted
 tokens, so on this engine the *text* decides the tok/s and nothing else does — reasoning prose yields ~2.5 tokens a
 step, code ~3.5, and you can read the phase change in a run straight off the throughput line. Numbers carry their
 conditions on purpose — rerun them and count.
@@ -106,7 +108,8 @@ GPU's memory *is* those pages, so every migration first unmaps them from the GPU
 - **`kv-cache-memory`** (bytes): 7 GB fp8 = 391,943 tokens. The table and the pool are the same memory: a bigger pin
   means fewer table rows resident (more NVMe re-reads), not a faster serve. `kv-cache-dtype: fp8` — drop the line for
   bf16 (217,808 tokens on the same pin).
-- **`max-num-seqs`** 8: ~1 GB of pool per running request regardless of length; 4 leaves ~130k tokens of context each.
+- **`max-num-seqs`** 8: ~12 % of the pool per running request regardless of length (the model's GDN state). 8 seats =
+  ~3k tokens of context each; 4 seats = ~50k each; 1–2 = the full 262k. Set it for your workload, not for the ladder.
 - **`MBX_PLE_MMAP_PREWARM`** (env): `auto` = populate the whole table after boot; `0` = fill on demand only (the hot set
   of a workload is ~19 GB); `<seconds>` = populate that long after boot.
 - **`max-num-batched-tokens`**: also the image-input encoder budget — 8192 fits one max-resolution image (~4.1k tokens)

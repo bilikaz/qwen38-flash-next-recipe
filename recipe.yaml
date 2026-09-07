@@ -36,7 +36,8 @@ vllm:
                                                 # box — a bigger pin means fewer table rows resident, not a faster serve
   kv-cache-dtype: fp8                           # the image's PR #54846 port; drop the line for bf16 (217,808 tokens)
   max-model-len: 262144                         # the model's native max (1.5 max-length requests fit the pool)
-  max-num-seqs: 8                               # ~1G of pool per running request is the model's GDN state, any length
+  max-num-seqs: 8                               # ~12% of the pool per running request is the model's GDN state, any length:
+                                                # 8 seats = ~3k tokens of context each, 4 = ~50k, 1-2 = the full 262k
   max-num-batched-tokens: 8192                  # also the image-input encoder budget — keep for image requests
   enable-prefix-caching: true
   enable-auto-tool-choice: true
