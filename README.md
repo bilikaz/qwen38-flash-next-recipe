@@ -1,19 +1,33 @@
 # Qwen3.8-Flash-Next on one DGX Spark
 
-**One box. 262k context. 50 tok/s sustained single-stream on code (peaks 55), 124 tok/s at 4 streams. Three commands.**
+**One box. 262k context. 50 tok/s sustained on code, minute after minute — and the engine never wavers. Three commands.**
 
 **v2 (2026-09-07)** serves [myllmbox/Qwen3.8-Flash-Next-hibrid47](https://huggingface.co/myllmbox/Qwen3.8-Flash-Next-hibrid47)
-— the same checkpoint the [2-Spark kit](https://github.com/bilikaz/qwen38-flash-next-cluster-recipe) serves: 180.0B counted
-parameters of Qwen's flagship MoE (6B active), the body at 4.35 bits effective, the 95 GB n-gram (PLE) table
-re-quantized to **NVFP4** (26.9 GiB) — on a **single NVIDIA DGX Spark (GB10, 119G unified memory)**. Against v1 (the same
-body with an int3 table in a CPU worker): **+15 % sustained single-stream (44 → 50–51 tok/s), +5 % engine steps, and the
-table that draws 26 of 32 boss scenes where int3 drew half** (measured on the cluster, same checkpoint, same table).
-v1 stays available: `git checkout v1` (image `…-vllm:v1`, checkpoint hibrid46).
+— the same checkpoint our [2-Spark kit](https://github.com/bilikaz/qwen38-flash-next-cluster-recipe) serves — on a
+**single NVIDIA DGX Spark (GB10, 119G unified memory)**. Qwen's flagship 180B MoE (6B active), vision included, the body
+at 4.35 bits effective, the 95 GB n-gram table re-quantized to **NVFP4** instead of int3. What changed against v1, in the
+order it matters:
 
-How 99 GB of weights serve on a 119 GB box: the table is **never allocated**. Its 8 shard files are memory-mapped and the
-GPU gathers rows straight out of the mapping (unified memory). The boot holds 73 GB of weights, so vLLM's autotune has the
-room it needs; once the engine is warm the whole table is pulled into memory in one pass and stays there. KV is **fp8**
-(391,943 tokens on a 7 GB pin). No CPU worker, no per-step detour, nothing to configure.
+1. **Constant speed.** The engine runs at 14.4 steps per second and stays there — a 12-minute, 30,000-token thinking-on
+   request held 14.0–14.6 steps/s from the first window to the last, no dips, no warm-up curve, no periodic stalls. What
+   varies is only how many tokens each step yields: ~2.5 on reasoning prose, ~3.5 on the written answer. v1's engine
+   breathed with the CPU worker it depended on; v2 has no worker to wait for.
+2. **+15 % sustained, single stream.** 44 → **50–51 tok/s** on code across twelve runs (49.0–51.1 average, 54.6 peak). At
+   four streams 103 → **129** (123–133 every window, 9.3 steps/s). The peaks moved little; the *floors* moved — the average became the floor.
+3. **A 99 GB model on a 119 GB box, without the out-of-memory.** The naive way — load everything — dies in vLLM's autotune,
+   which needs ~34 GB of transient room on top of the weights. v2 never allocates the 26.9 GiB table: the GPU reads it
+   straight out of the checkpoint files through unified memory, so the boot holds 73 GB, autotune gets its room, and once
+   the engine is warm the whole table is pulled into memory in one pass and stays there. NVMe is idle while decoding
+   (0 reads/s measured with nothing running, ~1 % of lookups on a cold stretch).
+4. **The better table.** NVFP4 vs int3 on the same n-gram rows: measured on the cluster with this checkpoint, 26 of 32
+   boss-level render scenes good where int3 drew about half.
+5. **fp8 KV.** Upstream vLLM PR #54846 ported: 391,943 KV tokens on a 7 GB pin (1.8× bf16 on the same bytes), full
+   262,144-token context, 1.5 max-length requests or 8 typical ones in flight.
+6. **Nothing to babysit.** The boot reads the table with direct NVMe reads while autotune runs, flips to the memory-mapped
+   path on its own, populates on its own; `./ple.sh status` shows it, `./ple.sh populate` repeats it. No root, no sysctl,
+   no password prompt anywhere in the kit.
+
+v1 stays available: `git checkout v1` (image `…-vllm:v1`, checkpoint hibrid46, int3 table in a CPU worker).
 
 ## Quick start
 
@@ -41,19 +55,18 @@ curl http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type: application/jso
 ## Measured performance (this exact kit, single Spark, K=3, `vm.compaction_proactiveness=0`)
 
 Boot 2026-09-07, myllmbox "pasture" prompt, 10-second engine windows (all streams decoding, zero prefill in the window);
-**sustained** = the run average, **peak** = the best window. v1 numbers from the same table in this README's `v1` tag.
+**sustained** = the run average, **peak** = the best window. v1 numbers are the ones this README carried at tag `v1`.
 
 | concurrent requests | v1 sustained | **v2 sustained** | v2 peak | engine steps/s (v1 → v2) | acceptance |
 |---|---|---|---|---|---|
-| 1 · code (thinking off) | 44 | **50–51** (12 runs, 49.0–51.1) | 54.6 | 13.8 → **14.4** (14.1–14.5) | ~3.5 |
-| 1 · thinking on, full 30k-token request | — | **39–42** (4 runs) | 52–56 | **14.4** | 2.9 (2.5 reasoning → 3.5–3.9 code) |
-| 4 · code | 103 | **124** | 137 | — → **8.9** | — |
+| 1 · code (thinking off) | 44 | **50–51** (12 runs, 49.0–51.1) | 54.6 | 13.8 → **14.4** (14.1–14.5, every run) | ~3.5 |
+| 1 · thinking on, full 30k-token request | — | **39–42** (4 runs, 12–14 min each) | 52–56 | **14.4** (14.0–14.6 over 12 min) | 2.9 (2.5 reasoning → 3.5–3.9 answer) |
+| 4 · code | 103 | **129** (123.2–133.2) | 133 | — → **9.3** (9.0–9.6) | 3.47 |
 
-Reading it: the engine runs at a constant 70 ms per step on one GPU — a 12-minute thinking-on request held 14.0–14.6
-steps/s the whole way; the text decides how many draft tokens each step yields (reasoning prose ~2.5, the written
-answer ~3.5). Full 262,144-token context; the 7 GB fp8 pool holds 391,943 tokens (1.5 max-length requests, or 8
-typical ones — ~1 GB of the pool per running request is the model's fixed GDN state). NVMe is idle while decoding
-(0.4 reads/s) once the table is in memory. Numbers carry their conditions on purpose — rerun them and count.
+The steps/s column is the story: one number, run after run, band after band. Generation speed is steps × accepted
+tokens, so on this engine the *text* decides the tok/s and nothing else does — reasoning prose yields ~2.5 tokens a
+step, code ~3.5, and you can read the phase change in a run straight off the throughput line. Numbers carry their
+conditions on purpose — rerun them and count.
 
 ## Memory on a Spark: what the kit does about it
 
