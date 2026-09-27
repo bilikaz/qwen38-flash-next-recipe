@@ -37,7 +37,7 @@ env:
 vllm:
   served-model-name: Qwen/Qwen3.8-Flash-Next
   engram-config: '{"cpu_offload": false}'
-  gdn-prefill-backend: triton
+  gdn-prefill-backend: flashinfer               # +5 % prefill over triton (two-Spark A/B), same decode speed
   moe-backend: marlin                           # fastest MoE kernel for NVFP4 W4A16 on the GB10
   distributed-executor-backend: mp
   gpu-memory-utilization: 0.70                  # with kv-cache-memory pinned this does not size the KV pool
